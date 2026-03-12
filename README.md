@@ -1,0 +1,107 @@
+# 🎮 坦克大战 (Tank Battle)
+
+基于 **Phaser 3.80** 框架开发的经典坦克大战游戏。
+
+## 🎯 在线演示
+
+访问 [GitHub Pages](https://你的用户名.github.io/坦克大战仓库名) 即可直接游玩！
+
+## ✨ 游戏特性
+
+- 🟢 **玩家坦克** - 绿色坦克，360° 旋转移动
+- 🔴 **敌方坦克** - 红色坦克，AI 自动巡逻 + 射击
+- 🧱 **地形系统** - 砖墙（可破坏）、钢墙（不可破坏）
+- 🏠 **基地保护** - 底部蓝色基地需要守护
+- 💥 **爆炸特效** - 程序化粒子爆炸动画
+- 📈 **关卡系统** - 每消灭 10 个敌人进入下一关
+- 🏆 **得分系统** - 击毁敌人获得 100 分
+- ❤️ **生命系统** - 3 条生命，用完游戏结束
+
+## 🎮 操作方式
+
+| 按键 | 功能 |
+|------|------|
+| **W / ↑** | 向上移动 |
+| **S / ↓** | 向下移动 |
+| **A / ←** | 向左移动 |
+| **D / →** | 向右移动 |
+| **空格** | 发射子弹 |
+| **R** | 游戏结束后重新开始 |
+
+## 🚀 快速开始
+
+### 方式一：直接打开 HTML 文件
+```bash
+# 克隆仓库
+git clone https://github.com/你的用户名/仓库名.git
+cd 仓库名
+
+# 用浏览器打开 index.html
+# 或使用本地服务器
+python3 -m http.server 8080
+# 访问 http://localhost:8080
+```
+
+### 方式二：VS Code Live Server
+1. 用 VS Code 打开项目文件夹
+2. 安装 "Live Server" 扩展
+3. 右键 `index.html` → "Open with Live Server"
+
+## 🛠️ 技术栈
+
+- **Phaser 3.80** - HTML5 游戏框架
+- **JavaScript** - 游戏逻辑
+- **Arcade Physics** - 2D 物理引擎
+- **程序化纹理** - 无需外部图片资源
+
+## 📁 项目结构
+
+```
+tank-battle/
+├── index.html      # 游戏主文件（包含所有代码）
+└── README.md       # 项目说明
+```
+
+## 🎨 游戏截图
+
+![游戏截图](./screenshot.png)
+
+## 📝 开发说明
+
+### 游戏配置
+在 `index.html` 中修改 `CONFIG` 对象：
+
+```javascript
+const CONFIG = {
+    WIDTH: 800,           // 游戏宽度
+    HEIGHT: 600,          // 游戏高度
+    PLAYER_SPEED: 200,    // 玩家速度
+    BULLET_SPEED: 400,    // 子弹速度
+    ENEMY_SPEED: 100,     // 敌人速度
+    FIRE_RATE: 300,       // 射击间隔 (ms)
+    ENEMY_SPAWN_RATE: 3000 // 敌人生成间隔 (ms)
+};
+```
+
+### 扩展功能
+可以添加：
+- 🎵 音效系统
+- 🏆 最高分记录 (LocalStorage)
+- 👾 更多敌人类型（快速坦克、装甲坦克）
+- 💣 道具系统（加速、穿甲弹、生命恢复）
+- 🌐 双人模式
+
+## 📄 许可证
+
+MIT License
+
+## 🙏 致谢
+
+感谢 Phaser 团队提供的优秀游戏框架！
+
+- [Phaser 官网](https://phaser.io)
+- [Phaser 文档](https://photonstorm.github.io/phaser3-docs/)
+
+---
+
+**享受游戏！** 🎮✨
