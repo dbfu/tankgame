@@ -53,9 +53,10 @@
         <span>得分：<span id="score">0</span></span>
         <span style="margin-left: 30px;">生命：<span id="lives">3</span></span>
         <span style="margin-left: 30px;">关卡：<span id="level">1</span></span>
+        <span style="margin-left: 30px;">坦克等级：<span id="tank-level">1</span></span>
     </div>
     <div id="game-container" tabindex="1"></div>
-    <div id="controls-hint">🎮 点击游戏画面开始 | WASD 或方向键移动 | 空格射击</div>
+    <div id="controls-hint">🎮 点击游戏画面开始 | WASD 或方向键移动 | 空格射击 | 拾取道具获得增益</div>
     
     <!-- 引入 Phaser 3.80 -->
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
@@ -70,7 +71,18 @@ const CONFIG = {
     BULLET_SPEED: 400,
     ENEMY_SPEED: 100,
     FIRE_RATE: 300,  // 射击间隔 ms
-    ENEMY_SPAWN_RATE: 3000  // 敌人生成间隔 ms
+    ENEMY_SPAWN_RATE: 3000,  // 敌人生成间隔 ms
+    POWERUP_SPAWN_RATE: 15000,  // 道具生成间隔 ms
+    POWERUP_DURATION: 10000  // 道具持续时间 ms
+};
+
+// 道具类型
+const POWERUP_TYPES = {
+    STAR: { name: '升级', color: 0xFFFF00, effect: 'upgrade' },      // 黄色 - 坦克升级
+    BOMB: { name: '炸弹', color: 0xFF0000, effect: 'bomb' },         // 红色 - 消灭所有敌人
+    CLOCK: { name: '冻结', color: 0x00FFFF, effect: 'freeze' },      // 青色 - 冻结敌人
+    HEART: { name: '生命', color: 0xFF69B4, effect: 'life' },        // 粉色 - 加生命
+    SHIELD: { name: '护盾', color: 0x00FF00, effect: 'shield' }      // 绿色 - 无敌护盾
 };
 
 // ==================== 游戏场景 ====================
@@ -85,6 +97,7 @@ class TankBattleScene extends Phaser.Scene {
         this.createBulletTexture();
         this.createWallTextures();
         this.createExplosionFrames();
+        this.createPowerupTexture();
     }
 
     create() {
@@ -95,6 +108,9 @@ class TankBattleScene extends Phaser.Scene {
         this.isGameOver = false;
         this.lastFired = 0;
         this.enemiesKilled = 0;
+        this.tankLevel = 1;
+        this.hasShield = false;
+        this.isFrozen = false;
 
         // 创建地图
         this.createMap();
@@ -112,10 +128,21 @@ class TankBattleScene extends Phaser.Scene {
         // 创建敌人群组
         this.enemies = this.physics.add.group();
         
+        // 创建道具群组
+        this.powerups = this.physics.add.group();
+        
         // 生成敌人
         this.time.addEvent({
             delay: CONFIG.ENEMY_SPAWN_RATE,
             callback: this.spawnEnemy,
+            callbackScope: this,
+            loop: true
+        });
+        
+        // 生成道具
+        this.time.addEvent({
+            delay: CONFIG.POWERUP_SPAWN_RATE,
+            callback: this.spawnPowerup,
             callbackScope: this,
             loop: true
         });
@@ -186,6 +213,23 @@ class TankBattleScene extends Phaser.Scene {
         graphics.fillStyle(0xffff00, 1);
         graphics.fillCircle(4, 4, 4);
         graphics.generateTexture('bullet', 8, 8);
+    }
+
+    createPowerupTexture() {
+        const graphics = this.make.graphics({ x: 0, y: 0, add: false });
+        // 创建道具基础纹理（星星形状）
+        graphics.fillStyle(0xFFFFFF, 1);
+        // 绘制一个方形带圆角的效果
+        graphics.fillRoundedRect(0, 0, 30, 30, 5);
+        // 中间加个星星标记
+        graphics.fillStyle(0xFFD700, 1);
+        for (let i = 0; i < 5; i++) {
+            const angle = (i * 4 * Math.PI / 5) - Math.PI / 2;
+            const x = 15 + Math.cos(angle) * 10;
+            const y = 15 + Math.sin(angle) * 10;
+            graphics.fillCircle(x, y, 3);
+        }
+        graphics.generateTexture('powerup', 30, 30);
     }
 
     createWallTextures() {
@@ -398,7 +442,51 @@ class TankBattleScene extends Phaser.Scene {
         enemy.changeDirectionTime = 0;
     }
 
+    spawnPowerup() {
+        if (this.isGameOver) return;
+        
+        // 随机选择一个道具类型
+        const types = Object.keys(POWERUP_TYPES);
+        const randomType = types[Math.floor(Math.random() * types.length)];
+        const powerupData = POWERUP_TYPES[randomType];
+        
+        // 随机生成位置（避开边缘）
+        const x = Phaser.Math.Between(100, CONFIG.WIDTH - 100);
+        const y = Phaser.Math.Between(100, CONFIG.HEIGHT - 200);
+        
+        // 创建道具
+        const powerup = this.powerups.create(x, y, 'powerup');
+        powerup.powerupType = randomType;
+        powerup.setTint(powerupData.color);
+        powerup.setCollideWorldBounds(true);
+        powerup.setVelocity(0);
+        
+        // 添加浮动动画
+        this.tweens.add({
+            targets: powerup,
+            y: y - 10,
+            duration: 500,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+        
+        // 10 秒后自动消失
+        this.time.delayedCall(10000, () => {
+            if (powerup.active) {
+                this.createFloatingText(x, y, '消失', 0x888888);
+                powerup.destroy();
+            }
+        });
+    }
+
     updateEnemy(enemy, time) {
+        // 冻结状态下敌人不能移动
+        if (this.isFrozen) {
+            enemy.setVelocity(0);
+            return;
+        }
+        
         // 改变方向
         if (time > enemy.changeDirectionTime) {
             enemy.direction = Phaser.Math.Between(0, 3);
@@ -493,6 +581,11 @@ class TankBattleScene extends Phaser.Scene {
         this.physics.add.collider(this.enemies, this.player, () => {
             this.playerHit();
         });
+        
+        // 玩家与道具
+        this.physics.add.overlap(this.player, this.powerups, (player, powerup) => {
+            this.collectPowerup(powerup);
+        });
     }
 
     destroyWall(wall) {
@@ -527,7 +620,105 @@ class TankBattleScene extends Phaser.Scene {
         }
     }
 
+    collectPowerup(powerup) {
+        const type = powerup.powerupType;
+        const data = POWERUP_TYPES[type];
+        
+        // 显示拾取提示
+        this.createFloatingText(powerup.x, powerup.y, data.name, data.color);
+        
+        // 应用道具效果
+        switch(data.effect) {
+            case 'upgrade':
+                this.tankLevel = Math.min(this.tankLevel + 1, 5);
+                this.updatePlayerAppearance();
+                break;
+            case 'bomb':
+                this.destroyAllEnemies();
+                break;
+            case 'freeze':
+                this.freezeEnemies();
+                break;
+            case 'life':
+                this.lives = Math.min(this.lives + 1, 5);
+                this.updateUI();
+                break;
+            case 'shield':
+                this.activateShield();
+                break;
+        }
+        
+        powerup.destroy();
+    }
+
+    createFloatingText(x, y, text, color) {
+        const txt = this.add.text(x, y, text, {
+            fontSize: '20px',
+            color: '#' + color.toString(16).padStart(6, '0'),
+            stroke: '#000000',
+            strokeThickness: 3
+        }).setOrigin(0.5);
+        
+        this.tweens.add({
+            targets: txt,
+            y: y - 50,
+            alpha: 0,
+            duration: 1000,
+            onComplete: () => txt.destroy()
+        });
+    }
+
+    updatePlayerAppearance() {
+        // 根据坦克等级改变颜色
+        const colors = [0x00ff00, 0x90EE90, 0x00CED1, 0xFFD700, 0xFF6347];
+        this.player.setTint(colors[this.tankLevel - 1]);
+    }
+
+    destroyAllEnemies() {
+        this.enemies.getChildren().forEach(enemy => {
+            const explosion = this.add.sprite(enemy.x, enemy.y, 'explosion0');
+            explosion.play('explode');
+            explosion.on('animationcomplete', () => explosion.destroy());
+            this.score += 50;
+            enemy.destroy();
+        });
+        this.updateUI();
+    }
+
+    freezeEnemies() {
+        this.isFrozen = true;
+        this.enemies.getChildren().forEach(enemy => {
+            enemy.setVelocity(0);
+            enemy.setTint(0x00FFFF);
+        });
+        
+        // 3 秒后解冻
+        this.time.delayedCall(3000, () => {
+            this.isFrozen = false;
+            this.enemies.getChildren().forEach(enemy => {
+                enemy.clearTint();
+            });
+        });
+    }
+
+    activateShield() {
+        this.hasShield = true;
+        this.player.setAlpha(0.5);
+        
+        // 10 秒后护盾消失
+        this.time.delayedCall(CONFIG.POWERUP_DURATION, () => {
+            this.hasShield = false;
+            this.player.setAlpha(1);
+        });
+    }
+
     playerHit() {
+        // 有护盾时不受伤害
+        if (this.hasShield) {
+            this.createFloatingText(this.player.x, this.player.y, '护盾保护!', 0x00FF00);
+            return;
+        }
+        
         this.lives--;
         this.updateUI();
 
@@ -581,6 +772,7 @@ class TankBattleScene extends Phaser.Scene {
         document.getElementById('score').textContent = this.score;
         document.getElementById('lives').textContent = this.lives;
         document.getElementById('level').textContent = this.level;
+        document.getElementById('tank-level').textContent = this.tankLevel;
     }
 }
 
