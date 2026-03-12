@@ -358,7 +358,8 @@ class TankBattleScene extends Phaser.Scene {
         
         this.lastFired = time;
         
-        const bullet = this.physics.add.sprite(this.player.x, this.player.y, 'bullet');
+        // 创建子弹并加入 playerBullets 群组
+        const bullet = this.playerBullets.create(this.player.x, this.player.y, 'bullet');
         
         // 根据坦克角度设置子弹方向
         const angle = this.player.angle;
@@ -377,8 +378,6 @@ class TankBattleScene extends Phaser.Scene {
             bullet.setVelocityX(CONFIG.BULLET_SPEED);
             bullet.x += offset;
         }
-
-        this.physics.add.existing(bullet);
     }
 
     spawnEnemy() {
