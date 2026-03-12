@@ -453,8 +453,11 @@ class TankBattleScene extends Phaser.Scene {
     }
 
     setupCollisions() {
-        // 玩家子弹与墙壁
-        this.physics.add.overlap(this.playerBullets, this.walls, (bullet) => {
+        // 玩家子弹与砖墙（可破坏）
+        this.physics.add.overlap(this.playerBullets, this.walls, (bullet, wall) => {
+            if (wall.texture.key === 'brick') {
+                this.destroyWall(wall);
+            }
             this.destroyBullet(bullet);
         });
 
@@ -470,8 +473,11 @@ class TankBattleScene extends Phaser.Scene {
             this.playerHit();
         });
 
-        // 敌人子弹与墙壁
-        this.physics.add.overlap(this.enemyBullets, this.walls, (bullet) => {
+        // 敌人子弹与砖墙（可破坏）
+        this.physics.add.overlap(this.enemyBullets, this.walls, (bullet, wall) => {
+            if (wall.texture.key === 'brick') {
+                this.destroyWall(wall);
+            }
             bullet.destroy();
         });
 
@@ -487,6 +493,17 @@ class TankBattleScene extends Phaser.Scene {
         this.physics.add.collider(this.enemies, this.player, () => {
             this.playerHit();
         });
+    }
+
+    destroyWall(wall) {
+        // 播放小型爆炸动画
+        const explosion = this.add.sprite(wall.x, wall.y, 'explosion0');
+        explosion.setScale(0.5);
+        explosion.play('explode');
+        explosion.on('animationcomplete', () => explosion.destroy());
+        
+        // 销毁墙壁
+        wall.destroy();
     }
 
     destroyBullet(bullet) {
