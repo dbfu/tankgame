@@ -340,6 +340,8 @@ class TankBattleScene extends Phaser.Scene {
         this.player = this.physics.add.sprite(startX, startY, 'player');
         this.player.setCollideWorldBounds(true);
         this.player.setDrag(200);
+        // 设置更小的碰撞体（坦克实际大小约 32x28）
+        this.player.body.setSize(28, 26);
     }
 
     createControls() {
@@ -440,6 +442,8 @@ class TankBattleScene extends Phaser.Scene {
         enemy.lastFired = 0;
         enemy.direction = Phaser.Math.Between(0, 3); // 0=上，1=右，2=下，3=左
         enemy.changeDirectionTime = 0;
+        // 设置更小的碰撞体
+        enemy.body.setSize(28, 26);
     }
 
     spawnPowerup() {
