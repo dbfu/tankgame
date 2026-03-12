@@ -17,6 +17,24 @@
         #game-container {
             border: 4px solid #4a4a6a;
             box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+            cursor: pointer;
+        }
+        #game-container:focus {
+            outline: 3px solid #00ff00;
+            outline-offset: 2px;
+        }
+        #controls-hint {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #0f0;
+            font-size: 14px;
+            text-align: center;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 8px;
+            z-index: 100;
         }
         #ui-overlay {
             position: absolute;
@@ -36,7 +54,8 @@
         <span style="margin-left: 30px;">生命：<span id="lives">3</span></span>
         <span style="margin-left: 30px;">关卡：<span id="level">1</span></span>
     </div>
-    <div id="game-container"></div>
+    <div id="game-container" tabindex="1"></div>
+    <div id="controls-hint">🎮 点击游戏画面开始 | WASD 或方向键移动 | 空格射击</div>
     
     <!-- 引入 Phaser 3.80 -->
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
@@ -564,10 +583,27 @@ const config = {
     scale: {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH
+    },
+    input: {
+        activePointers: 1,
+        keyboard: {
+            capture: true
+        }
     }
 };
 
 const game = new Phaser.Game(config);
+
+// 点击游戏画面获得焦点
+document.getElementById('game-container').addEventListener('click', function() {
+    this.focus();
+});
+
+// 隐藏提示（游戏启动后）
+window.addEventListener('keydown', function() {
+    const hint = document.getElementById('controls-hint');
+    if (hint) hint.style.opacity = '0.5';
+}, { once: true });
     </script>
 </body>
 </html>
