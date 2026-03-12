@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>坦克大战 - Phaser 3.80</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+        }
+        #game-container {
+            border: 4px solid #4a4a6a;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+        }
+        #ui-overlay {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #0f0;
+            font-size: 18px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui-overlay">
+        <span>得分：<span id="score">0</span></span>
+        <span style="margin-left: 30px;">生命：<span id="lives">3</span></span>
+        <span style="margin-left: 30px;">关卡：<span id="level">1</span></span>
+    </div>
+    <div id="game-container"></div>
+    
+    <!-- 引入 Phaser 3.80 -->
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+    
+    <script>
+// ==================== 游戏配置 ====================
+const CONFIG = {
+    WIDTH: 800,
+    HEIGHT: 600,
+    TILE_SIZE: 40,
+    PLAYER_SPEED: 200,
+    BULLET_SPEED: 400,
+    ENEMY_SPEED: 100,
+    FIRE_RATE: 300,  // 射击间隔 ms
+    ENEMY_SPAWN_RATE: 3000  // 敌人生成间隔 ms
+};
+
+// ==================== 游戏场景 ====================
+class TankBattleScene extends Phaser.Scene {
+    constructor() {
+        super('TankBattleScene');
+    }
+
+    preload() {
+        // 生成坦克纹理（程序化生成，无需外部图片）
+        this.createTankTextures();
+        this.createBulletTexture();
+        this.createWallTextures();
+        this.createExplosionFrames();
+    }
+
+    create() {
+        // 游戏状态
+        this.score = 0;
+        this.lives = 3;
+        this.level = 1;
+        this.isGameOver = false;
+        this.lastFired = 0;
+        this.enemiesKilled = 0;
+
+        // 创建地图
+        this.createMap();
+
+        // 创建玩家坦克
+        this.createPlayer();
+
+        // 创建输入
+        this.createControls();
+
+        // 创建敌人群组
+        this.enemies = this.physics.add.group();
+        this.enemyBullets = this.physics.add.group();
+        
+        // 生成敌人
+        this.time.addEvent({
+            delay: CONFIG.ENEMY_SPAWN_RATE,
+            callback: this.spawnEnemy,
+            callbackScope: this,
+            loop: true
+        });
+
+        // 创建碰撞检测
+        this.setupCollisions();
+
+        // UI 文本
+        this.createGameText();
+    }
+
+    update(time, delta) {
+        if (this.isGameOver) return;
+
+        // 玩家移动
+        this.handlePlayerMovement(delta);
+
+        // 射击
+        if (this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE).isDown) {
+            this.fireBullet(time);
+        }
+
+        // 敌人移动和射击
+        this.enemies.getChildren().forEach(enemy => {
+            this.updateEnemy(enemy, time);
+        });
+
+        // 清理出界的子弹
+        this.cleanupBullets();
+    }
+
+    // ==================== 纹理生成 ====================
+    createTankTextures() {
+        const graphics = this.make.graphics({ x: 0, y: 0, add: false });
+
+        // 玩家坦克（绿色）
+        this.createTankSprite(graphics, 'player', 0x00ff00);
+        
+        // 敌人坦克（红色）
+        this.createTankSprite(graphics, 'enemy', 0xff0000);
+    }
+
+    createTankSprite(graphics, name, color) {
+        graphics.clear();
+        
+        // 坦克主体
+        graphics.fillStyle(color, 1);
+        graphics.fillRect(4, 8, 32, 24);
+        
+        // 坦克炮塔
+        graphics.fillStyle(color, 0.8);
+        graphics.fillRect(14, 14, 12, 12);
+        
+        // 炮管
+        graphics.fillStyle(0x333333, 1);
+        graphics.fillRect(18, 0, 4, 20);
+        
+        // 履带
+        graphics.fillStyle(0x222222, 1);
+        graphics.fillRect(0, 8, 4, 24);
+        graphics.fillRect(36, 8, 4, 24);
+        
+        graphics.generateTexture(name, 40, 40);
+    }
+
+    createBulletTexture() {
+        const graphics = this.make.graphics({ x: 0, y: 0, add: false });
+        graphics.fillStyle(0xffff00, 1);
+        graphics.fillCircle(4, 4, 4);
+        graphics.generateTexture('bullet', 8, 8);
+    }
+
+    createWallTextures() {
+        const graphics = this.make.graphics({ x: 0, y: 0, add: false });
+        
+        // 砖墙
+        graphics.fillStyle(0x8B4513, 1);
+        for (let i = 0; i < 4; i++) {
+            for (let j = 0; j < 4; j++) {
+                graphics.fillRect(i * 10 + 1, j * 10 + 1, 8, 8);
+            }
+        }
+        graphics.generateTexture('brick', 40, 40);
+
+        // 钢墙
+        graphics.clear();
+        graphics.fillStyle(0x888888, 1);
+        graphics.fillRect(2, 2, 36, 36);
+        graphics.lineStyle(2, 0xaaaaaa, 1);
+        graphics.strokeRect(2, 2, 36, 36);
+        graphics.generateTexture('steel', 40, 40);
+
+        // 基地
+        graphics.clear();
+        graphics.fillStyle(0x0000ff, 1);
+        graphics.fillRect(5, 5, 30, 30);
+        graphics.fillStyle(0xffff00, 1);
+        graphics.fillCircle(20, 20, 8);
+        graphics.generateTexture('base', 40, 40);
+    }
+
+    createExplosionFrames() {
+        const frames = [];
+        for (let i = 0; i < 5; i++) {
+            const graphics = this.make.graphics({ x: 0, y: 0, add: false });
+            const radius = 10 + i * 8;
+            const alpha = 1 - i * 0.2;
+            
+            graphics.fillStyle(0xff6600, alpha);
+            graphics.fillCircle(25, 25, radius);
+            graphics.fillStyle(0xffff00, alpha);
+            graphics.fillCircle(25, 25, radius * 0.5);
+            
+            graphics.generateTexture(`explosion${i}`, 50, 50);
+            frames.push(`explosion${i}`);
+        }
+        
+        // 创建爆炸动画
+        this.anims.create({
+            key: 'explode',
+            frames: frames.map(f => ({ key: f })),
+            frameRate: 15,
+            repeat: 0
+        });
+    }
+
+    // ==================== 游戏对象创建 ====================
+    createMap() {
+        this.walls = this.physics.add.staticGroup();
+        
+        // 地图布局（1=砖墙，2=钢墙，3=基地，0=空地）
+        const map = [
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,1,1,0,0,1,1,0,0,0,0,0,1,1,0,0,1,1,0,0],
+            [0,1,1,0,0,1,1,0,0,0,0,0,1,1,0,0,1,1,0,0],
+            [0,1,1,0,0,1,1,0,0,2,2,0,0,1,1,0,0,1,1,0],
+            [0,1,1,0,0,1,1,0,0,2,2,0,0,1,1,0,0,1,1,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,1,1,0,0,1,1,0,0,0,0,0,1,1,0,0,1,1,0,0],
+            [0,1,1,0,0,1,1,0,0,0,0,0,1,1,0,0,1,1,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,1,1,0,0,1,1,0,0,2,2,0,0,1,1,0,0,1,1,0],
+            [0,1,1,0,0,1,1,0,0,2,2,0,0,1,1,0,0,1,1,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,1,1,0,0,1,1,0,0,0,0,0,1,1,0,0,1,1,0,0],
+            [0,1,1,0,0,1,1,0,0,0,0,0,1,1,0,0,1,1,0,0],
+            [0,0,0,0,0,0,0,1,1,0,0,1,1,0,0,0,0,0,0,0]
+        ];
+
+        for (let row = 0; row < map.length; row++) {
+            for (let col = 0; col < map[row].length; col++) {
+                const type = map[row][col];
+                const x = col * CONFIG.TILE_SIZE + CONFIG.TILE_SIZE / 2;
+                const y = row * CONFIG.TILE_SIZE + CONFIG.TILE_SIZE / 2 + 50;
+                
+                if (type === 1) {
+                    this.walls.create(x, y, 'brick');
+                } else if (type === 2) {
+                    this.walls.create(x, y, 'steel');
+                } else if (type === 3) {
+                    this.base = this.physics.add.sprite(x, y, 'base');
+                    this.physics.add.existing(this.base, true);
+                }
+            }
+        }
+
+        // 创建基地（底部中央）
+        const baseX = CONFIG.WIDTH / 2;
+        const baseY = CONFIG.HEIGHT - 40;
+        this.base = this.physics.add.sprite(baseX, baseY, 'base');
+        this.physics.add.existing(this.base, true);
+    }
+
+    createPlayer() {
+        const startX = CONFIG.WIDTH / 2;
+        const startY = CONFIG.HEIGHT - 80;
+        
+        this.player = this.physics.add.sprite(startX, startY, 'player');
+        this.player.setCollideWorldBounds(true);
+        this.player.setDrag(200);
+    }
+
+    createControls() {
+        this.cursors = this.input.keyboard.createCursorKeys();
+        this.wasd = this.input.keyboard.addKeys({
+            up: Phaser.Input.Keyboard.KeyCodes.W,
+            down: Phaser.Input.Keyboard.KeyCodes.S,
+            left: Phaser.Input.Keyboard.KeyCodes.A,
+            right: Phaser.Input.Keyboard.KeyCodes.D
+        });
+    }
+
+    createGameText() {
+        // 游戏结束文本（初始隐藏）
+        this.gameOverText = this.add.text(CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2, '', {
+            fontSize: '48px',
+            color: '#ff0000',
+            stroke: '#000000',
+            strokeThickness: 6,
+            fontStyle: 'bold'
+        }).setOrigin(0.5).setVisible(false);
+
+        this.restartText = this.add.text(CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 60, '按 R 重新开始', {
+            fontSize: '24px',
+            color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 4
+        }).setOrigin(0.5).setVisible(false);
+
+        // 监听 R 键重启
+        this.input.keyboard.on('keydown-R', () => {
+            if (this.isGameOver) {
+                this.scene.restart();
+            }
+        });
+    }
+
+    // ==================== 游戏逻辑 ====================
+    handlePlayerMovement(delta) {
+        const speed = CONFIG.PLAYER_SPEED;
+        this.player.setVelocity(0);
+
+        if (this.cursors.left.isDown || this.wasd.left.isDown) {
+            this.player.setVelocityX(-speed);
+            this.player.setAngle(-90);
+        } else if (this.cursors.right.isDown || this.wasd.right.isDown) {
+            this.player.setVelocityX(speed);
+            this.player.setAngle(90);
+        } else if (this.cursors.up.isDown || this.wasd.up.isDown) {
+            this.player.setVelocityY(-speed);
+            this.player.setAngle(0);
+        } else if (this.cursors.down.isDown || this.wasd.down.isDown) {
+            this.player.setVelocityY(speed);
+            this.player.setAngle(180);
+        }
+    }
+
+    fireBullet(time) {
+        if (time - this.lastFired < CONFIG.FIRE_RATE) return;
+        
+        this.lastFired = time;
+        
+        const bullet = this.physics.add.sprite(this.player.x, this.player.y, 'bullet');
+        
+        // 根据坦克角度设置子弹方向
+        const angle = this.player.angle;
+        const offset = 25;
+        
+        if (angle === 0) {
+            bullet.setVelocityY(-CONFIG.BULLET_SPEED);
+            bullet.y -= offset;
+        } else if (angle === 180) {
+            bullet.setVelocityY(CONFIG.BULLET_SPEED);
+            bullet.y += offset;
+        } else if (angle === -90) {
+            bullet.setVelocityX(-CONFIG.BULLET_SPEED);
+            bullet.x -= offset;
+        } else if (angle === 90) {
+            bullet.setVelocityX(CONFIG.BULLET_SPEED);
+            bullet.x += offset;
+        }
+
+        this.physics.add.existing(bullet);
+    }
+
+    spawnEnemy() {
+        if (this.enemies.getChildren().length >= 4 || this.isGameOver) return;
+
+        const spawnPoints = [
+            { x: 40, y: 40 },
+            { x: CONFIG.WIDTH / 2, y: 40 },
+            { x: CONFIG.WIDTH - 40, y: 40 }
+        ];
+        
+        const spawn = Phaser.Utils.Array.GetRandom(spawnPoints);
+        const enemy = this.enemies.create(spawn.x, spawn.y, 'enemy');
+        enemy.setCollideWorldBounds(true);
+        enemy.setVelocity(0);
+        enemy.lastFired = 0;
+        enemy.direction = Phaser.Math.Between(0, 3); // 0=上，1=右，2=下，3=左
+        enemy.changeDirectionTime = 0;
+    }
+
+    updateEnemy(enemy, time) {
+        // 改变方向
+        if (time > enemy.changeDirectionTime) {
+            enemy.direction = Phaser.Math.Between(0, 3);
+            enemy.changeDirectionTime = time + Phaser.Math.Between(1000, 3000);
+            
+            // 设置角度
+            const angles = [0, 90, 180, -90];
+            enemy.setAngle(angles[enemy.direction]);
+        }
+
+        // 移动
+        const speed = CONFIG.ENEMY_SPEED + (this.level - 1) * 20;
+        enemy.setVelocity(0);
+        
+        switch(enemy.direction) {
+            case 0: enemy.setVelocityY(-speed); break;
+            case 1: enemy.setVelocityX(speed); break;
+            case 2: enemy.setVelocityY(speed); break;
+            case 3: enemy.setVelocityX(-speed); break;
+        }
+
+        // 射击
+        if (time > enemy.lastFired + 2000) {
+            enemy.lastFired = time;
+            const bullet = this.enemyBullets.create(enemy.x, enemy.y, 'bullet');
+            
+            const offset = 25;
+            switch(enemy.direction) {
+                case 0: bullet.setVelocityY(-CONFIG.BULLET_SPEED); bullet.y -= offset; break;
+                case 1: bullet.setVelocityX(CONFIG.BULLET_SPEED); bullet.x += offset; break;
+                case 2: bullet.setVelocityY(CONFIG.BULLET_SPEED); bullet.y += offset; break;
+                case 3: bullet.setVelocityX(-CONFIG.BULLET_SPEED); bullet.x -= offset; break;
+            }
+            
+            this.physics.add.existing(bullet);
+        }
+    }
+
+    cleanupBullets() {
+        this.physics.world.overlap(this.enemyBullets, this.walls, (bullet) => {
+            bullet.destroy();
+        });
+        
+        // 清理出界的子弹
+        [this.enemyBullets].forEach(group => {
+            group.getChildren().forEach(bullet => {
+                if (bullet.x < 0 || bullet.x > CONFIG.WIDTH || bullet.y < 0 || bullet.y > CONFIG.HEIGHT) {
+                    bullet.destroy();
+                }
+            });
+        });
+    }
+
+    setupCollisions() {
+        // 玩家子弹与墙壁
+        this.physics.add.overlap(this.playerBullets, this.walls, (bullet) => {
+            this.destroyBullet(bullet);
+        });
+
+        // 玩家子弹与敌人
+        this.physics.add.overlap(this.playerBullets, this.enemies, (bullet, enemy) => {
+            this.destroyBullet(bullet);
+            this.destroyEnemy(enemy);
+        });
+
+        // 敌人子弹与玩家
+        this.physics.add.overlap(this.enemyBullets, this.player, (bullet) => {
+            bullet.destroy();
+            this.playerHit();
+        });
+
+        // 敌人子弹与墙壁
+        this.physics.add.overlap(this.enemyBullets, this.walls, (bullet) => {
+            bullet.destroy();
+        });
+
+        // 敌人与墙壁碰撞
+        this.physics.add.collider(this.enemies, this.walls, (enemy) => {
+            enemy.changeDirectionTime = 0; // 立即改变方向
+        });
+
+        // 玩家与墙壁
+        this.physics.add.collider(this.player, this.walls);
+        
+        // 敌人与玩家
+        this.physics.add.collider(this.enemies, this.player, () => {
+            this.playerHit();
+        });
+    }
+
+    destroyBullet(bullet) {
+        if (bullet) bullet.destroy();
+    }
+
+    destroyEnemy(enemy) {
+        // 播放爆炸动画
+        const explosion = this.add.sprite(enemy.x, enemy.y, 'explosion0');
+        explosion.play('explode');
+        explosion.on('animationcomplete', () => explosion.destroy());
+
+        enemy.destroy();
+        this.score += 100;
+        this.enemiesKilled++;
+        this.updateUI();
+
+        // 升级检测
+        if (this.enemiesKilled >= 10 * this.level) {
+            this.levelUp();
+        }
+    }
+
+    playerHit() {
+        this.lives--;
+        this.updateUI();
+
+        // 播放爆炸
+        const explosion = this.add.sprite(this.player.x, this.player.y, 'explosion0');
+        explosion.play('explode');
+        explosion.on('animationcomplete', () => explosion.destroy());
+
+        if (this.lives <= 0) {
+            this.gameOver();
+        } else {
+            // 重生玩家
+            this.player.setPosition(CONFIG.WIDTH / 2, CONFIG.HEIGHT - 80);
+            this.player.setVelocity(0);
+        }
+    }
+
+    levelUp() {
+        this.level++;
+        this.enemiesKilled = 0;
+        this.updateUI();
+        
+        // 显示升级提示
+        const levelText = this.add.text(CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2, `第 ${this.level} 关!`, {
+            fontSize: '36px',
+            color: '#00ff00',
+            stroke: '#000000',
+            strokeThickness: 4
+        }).setOrigin(0.5);
+        
+        this.tweens.add({
+            targets: levelText,
+            alpha: 0,
+            duration: 2000,
+            onComplete: () => levelText.destroy()
+        });
+    }
+
+    gameOver() {
+        this.isGameOver = true;
+        this.physics.pause();
+        this.enemies.clear(true, true);
+        this.enemyBullets.clear(true, true);
+        
+        this.gameOverText.setText('游戏结束');
+        this.gameOverText.setVisible(true);
+        this.restartText.setVisible(true);
+    }
+
+    updateUI() {
+        document.getElementById('score').textContent = this.score;
+        document.getElementById('lives').textContent = this.lives;
+        document.getElementById('level').textContent = this.level;
+    }
+}
+
+// ==================== 游戏初始化 ====================
+const config = {
+    type: Phaser.AUTO,
+    width: CONFIG.WIDTH,
+    height: CONFIG.HEIGHT,
+    parent: 'game-container',
+    backgroundColor: '#000000',
+    physics: {
+        default: 'arcade',
+        arcade: {
+            gravity: { y: 0 },
+            debug: false
+        }
+    },
+    scene: TankBattleScene,
+    scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH
+    }
+};
+
+const game = new Phaser.Game(config);
+    </script>
+</body>
+</html>
