@@ -105,9 +105,12 @@ class TankBattleScene extends Phaser.Scene {
         // 创建输入
         this.createControls();
 
+        // 创建子弹群组
+        this.playerBullets = this.physics.add.group();
+        this.enemyBullets = this.physics.add.group();
+        
         // 创建敌人群组
         this.enemies = this.physics.add.group();
-        this.enemyBullets = this.physics.add.group();
         
         // 生成敌人
         this.time.addEvent({
